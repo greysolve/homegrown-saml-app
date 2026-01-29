@@ -297,10 +297,9 @@
     async function loadConfig() {
       hideMessage();
       btnLoad.disabled = true;
-      const issuer = form.issuer.value.trim();
-      const url = issuer
-        ? API_BASE + '/saml-config?issuer=' + encodeURIComponent(issuer)
-        : API_BASE + '/saml-config';
+      const issuerEl = form.elements['issuer'];
+      const issuer = issuerEl ? issuerEl.value.trim() : '';
+      const url = API_BASE + '/saml-config' + (issuer ? '?issuer=' + encodeURIComponent(issuer) : '');
       try {
         const res = await fetch(url);
         if (res.ok) {
