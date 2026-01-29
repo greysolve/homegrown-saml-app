@@ -287,11 +287,15 @@
 
     function setFormData(data) {
       if (!data) return;
-      form.entityId.value = data.entityId || '';
-      form.issuer.value = data.issuer || '';
-      form.idpEntryPoint = data.idpEntryPoint || '';
-      form.acsUrl.value = data.acsUrl || '';
-      form.idpCert.value = data.idpCert || '';
+      const set = (name, value) => {
+        const el = form.elements[name];
+        if (el) el.value = value || '';
+      };
+      set('entityId', data.entityId ?? data.entity_id);
+      set('issuer', data.issuer);
+      set('idpEntryPoint', data.idpEntryPoint ?? data.idp_entry_point);
+      set('acsUrl', data.acsUrl ?? data.acs_url);
+      set('idpCert', data.idpCert ?? data.idp_cert);
     }
 
     async function loadConfig() {
