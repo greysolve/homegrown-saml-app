@@ -308,7 +308,8 @@
         const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
-          setFormData(data);
+          const item = Array.isArray(data) ? data[0] : data;
+          setFormData(item);
           showMessage('Configuration loaded.', 'success');
         } else {
           showMessage('Could not load configuration. API may not be wired yet.', 'info');
