@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAML configuration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --surface: #18181c;
+      --border: #2a2a30;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --accent: #22c55e;
+      --accent-hover: #16a34a;
+      --error: #ef4444;
+      --focus: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .layout {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0.25rem 0 0;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .back:hover {
+      color: var(--text);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group:last-of-type {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
+
+    input[type="text"],
+    input[type="url"],
+    textarea {
+      width: 100%;
+      padding: 0.625rem 0.75rem;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--focus);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--text-muted);
+    }
+
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+    }
+
+    .actions {
+      margin-top: 1.75rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      padding: 0.625rem 1.25rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.05s;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+    }
+
+    .message {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .message.visible {
+      display: block;
+    }
+
+    .message.success {
+      background: rgba(34, 197, 94, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .message.error {
+      background: rgba(239, 68, 68, 0.12);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .message.info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <a href="/" class="back">← Back to app</a>
+
+    <header>
+      <h1>SAML configuration</h1>
+      <p class="subtitle">Service provider settings. Values are stored via the API and used for IdP login and assertion validation.</p>
+    </header>
+
+    <div class="card">
+      <form id="saml-config-form">
+        <div class="form-group">
+          <label for="issuer">Issuer (Entity ID)</label>
+          <input type="url" id="issuer" name="issuer" placeholder="https://your-app.example.com" autocomplete="off">
+          <p class="hint">Your app’s unique identifier. Must match what you register at the IdP.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="idpEntryPoint">IdP entry point (SSO URL)</label>
+          <input type="url" id="idpEntryPoint" name="idpEntryPoint" placeholder="https://login.microsoftonline.com/TENANT_ID/saml2" autocomplete="off">
+          <p class="hint">Where users are sent to sign in (e.g. Entra ID SAML 2.0 endpoint).</p>
+        </div>
+
+        <div class="form-group">
+          <label for="acsUrl">Assertion Consumer Service URL</label>
+          <input type="url" id="acsUrl" name="acsUrl" placeholder="https://your-app.example.com/saml/acs" autocomplete="off">
+          <p class="hint">Must match exactly what you register at the IdP. The IdP POSTs the SAML response here.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="idpCert">IdP certificate (PEM)</label>
+          <textarea id="idpCert" name="idpCert" placeholder="-----BEGIN CERTIFICATE----&#10;...&#10;-----END CERTIFICATE-----" autocomplete="off"></textarea>
+          <p class="hint">Public certificate from the IdP’s federation metadata. Used to verify assertion signatures.</p>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn-primary">Save configuration</button>
+          <button type="button" class="btn-secondary" id="btn-load">Load current</button>
+        </div>
+
+        <div id="message" class="message" role="status"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://app.greysolve.com/webhook-test';
+    const form = document.getElementById('saml-config-form');
+    const messageEl = document.getElementById('message');
+    const btnLoad = document.getElementById('btn-load');
+
+    function showMessage(text, type) {
+      messageEl.textContent = text;
+      messageEl.className = 'message visible ' + (type || 'info');
+    }
+
+    function hideMessage() {
+      messageEl.className = 'message';
+    }
+
+    function getFormData() {
+      return {
+        issuer: form.issuer.value.trim(),
+        idpEntryPoint: form.idpEntryPoint.value.trim(),
+        acsUrl: form.acsUrl.value.trim(),
+        idpCert: form.idpCert.value.trim()
+      };
+    }
+
+    function setFormData(data) {
+      if (!data) return;
+      form.issuer.value = data.issuer || '';
+      form.idpEntryPoint = data.idpEntryPoint || '';
+      form.acsUrl.value = data.acsUrl || '';
+      form.idpCert.value = data.idpCert || '';
+    }
+
+    async function loadConfig() {
+      hideMessage();
+      btnLoad.disabled = true;
+      try {
+        const res = await fetch(API_BASE + '/saml-config');
+        if (res.ok) {
+          const data = await res.json();
+          setFormData(data);
+          showMessage('Configuration loaded.', 'success');
+        } else {
+          showMessage('Could not load configuration. API may not be wired yet.', 'info');
+        }
+      } catch (err) {
+        showMessage('Request failed: ' + err.message, 'error');
+      } finally {
+        btnLoad.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMessage();
+      const body = getFormData();
+
+      if (!body.issuer || !body.idpEntryPoint || !body.acsUrl || !body.idpCert) {
+        showMessage('Please fill in all fields.', 'error');
+        return;
+      }
+
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      try {
+        const res = await fetch(API_BASE + '/saml-config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (res.ok) {
+          showMessage('Configuration saved.', 'success');
+        } else {
+          const text = await res.text();
+          showMessage('Save failed: ' + (text || res.statusText), 'error');
+        }
+      } catch (err) {
+        showMessage('Request failed: ' + err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    btnLoad.addEventListener('click', loadConfig);
+
+    // Optional: load on page open so user sees current config when API is ready
+    loadConfig();
+  </script>
+</body>
+</html>

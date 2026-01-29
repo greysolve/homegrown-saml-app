@@ -1,0 +1,284 @@
+const express = require('express');
+const zlib = require('zlib');
+const crypto = require('crypto');
+const { DOMParser } = require('@xmldom/xmldom');
+const xpath = require('xpath');
+const { SignedXml } = require('xml-crypto');
+
+const app = express();
+app.use(express.urlencoded({ extended: false }));
+app.use(express.static('public'));
+
+// =============================================================================
+// CONFIGURATION - These come from your IdP (Entra ID)
+// =============================================================================
+const config = {
+  // Your app's unique identifier (you make this up, register it with IdP)
+  issuer: process.env.SAML_ISSUER || 'https://your-app.vercel.app',
+  
+  // Where your IdP's SAML login page lives
+  idpEntryPoint: process.env.SAML_ENTRY_POINT || 'https://login.microsoftonline.com/TENANT_ID/saml2',
+  
+  // Where IdP sends the response (must match what you register in Entra)
+  acsUrl: process.env.SAML_ACS_URL || 'https://your-app.vercel.app/saml/acs',
+  
+  // IdP's public certificate (from Entra's Federation Metadata XML)
+  // Used to verify the assertion signature
+  idpCert: process.env.SAML_CERT || `-----BEGIN CERTIFICATE-----
+PASTE_YOUR_IDP_CERTIFICATE_HERE
+-----END CERTIFICATE-----`
+};
+
+// =============================================================================
+// STEP 1: BUILD THE AUTHNREQUEST XML
+// This is what we send to the IdP saying "please authenticate this user"
+// =============================================================================
+function buildAuthnRequest() {
+  const id = '_' + crypto.randomBytes(16).toString('hex');
+  const issueInstant = new Date().toISOString();
+  
+  // This is the raw SAML AuthnRequest XML structure
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<samlp:AuthnRequest
+    xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+    xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+    ID="${id}"
+    Version="2.0"
+    IssueInstant="${issueInstant}"
+    Destination="${config.idpEntryPoint}"
+    AssertionConsumerServiceURL="${config.acsUrl}"
+    ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">
+    <saml:Issuer>${config.issuer}</saml:Issuer>
+    <samlp:NameIDPolicy
+        Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+        AllowCreate="true"/>
+</samlp:AuthnRequest>`;
+
+  return { id, xml };
+}
+
+// =============================================================================
+// STEP 2: ENCODE THE REQUEST FOR REDIRECT
+// SAML HTTP-Redirect binding requires: Deflate -> Base64 -> URL encode
+// =============================================================================
+function encodeAuthnRequest(xml) {
+  // Deflate compress (not gzip - raw deflate)
+  const deflated = zlib.deflateRawSync(xml);
+  
+  // Base64 encode
+  const base64 = deflated.toString('base64');
+  
+  // URL encode (special chars need escaping)
+  return encodeURIComponent(base64);
+}
+
+// =============================================================================
+// STEP 3: LOGIN ROUTE - Redirect user to IdP
+// =============================================================================
+app.get('/login', (req, res) => {
+  const { id, xml } = buildAuthnRequest();
+  
+  // Store the request ID to validate later (prevents replay attacks)
+  // In production, use a real session store
+  app.locals.pendingRequestId = id;
+  
+  console.log('\n=== OUTGOING AUTHNREQUEST ===');
+  console.log(xml);
+  console.log('=============================\n');
+  
+  const encodedRequest = encodeAuthnRequest(xml);
+  
+  // Build the full redirect URL
+  const redirectUrl = `${config.idpEntryPoint}?SAMLRequest=${encodedRequest}`;
+  
+  console.log('Redirecting to IdP:', redirectUrl.substring(0, 100) + '...\n');
+  
+  res.redirect(redirectUrl);
+});
+
+// =============================================================================
+// STEP 4: ASSERTION CONSUMER SERVICE (ACS) - Receive IdP's response
+// The IdP POSTs the SAMLResponse here after user authenticates
+// =============================================================================
+app.post('/saml/acs', (req, res) => {
+  const samlResponse = req.body.SAMLResponse;
+  
+  if (!samlResponse) {
+    return res.status(400).send('No SAMLResponse received');
+  }
+  
+  console.log('\n=== RECEIVED SAMLRESPONSE (base64) ===');
+  console.log(samlResponse.substring(0, 100) + '...');
+  
+  // ---------------------------------------------
+  // STEP 4a: Base64 decode the response
+  // ---------------------------------------------
+  const xml = Buffer.from(samlResponse, 'base64').toString('utf8');
+  
+  console.log('\n=== DECODED SAMLRESPONSE XML ===');
+  console.log(xml);
+  console.log('================================\n');
+  
+  // ---------------------------------------------
+  // STEP 4b: Parse the XML
+  // ---------------------------------------------
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  
+  // Define namespaces for XPath queries
+  const namespaces = {
+    samlp: 'urn:oasis:names:tc:SAML:2.0:protocol',
+    saml: 'urn:oasis:names:tc:SAML:2.0:assertion',
+    ds: 'http://www.w3.org/2000/09/xmldsig#'
+  };
+  
+  const select = xpath.useNamespaces(namespaces);
+  
+  // ---------------------------------------------
+  // STEP 4c: Validate the status
+  // ---------------------------------------------
+  const statusCode = select('//samlp:StatusCode/@Value', doc)[0];
+  if (!statusCode || !statusCode.value.includes('Success')) {
+    return res.status(401).send('SAML authentication failed: ' + (statusCode?.value || 'unknown'));
+  }
+  
+  // ---------------------------------------------
+  // STEP 4d: Validate the signature (CRITICAL!)
+  // This proves the assertion came from your IdP
+  // ---------------------------------------------
+  const signature = select('//ds:Signature', doc)[0];
+  if (!signature) {
+    return res.status(401).send('No signature found in SAML response');
+  }
+  
+  const sig = new SignedXml();
+  
+  // Provide the IdP's public certificate for verification
+  sig.keyInfoProvider = {
+    getKey: () => config.idpCert
+  };
+  
+  sig.loadSignature(signature);
+  
+  // Find what was signed (the assertion or response)
+  const signedXml = signature.parentNode;
+  
+  const isValid = sig.checkSignature(signedXml.toString());
+  
+  if (!isValid) {
+    console.log('Signature validation errors:', sig.validationErrors);
+    return res.status(401).send('Invalid SAML signature');
+  }
+  
+  console.log('✓ Signature validated successfully\n');
+  
+  // ---------------------------------------------
+  // STEP 4e: Validate conditions (timing, audience)
+  // ---------------------------------------------
+  const conditions = select('//saml:Conditions', doc)[0];
+  if (conditions) {
+    const notBefore = conditions.getAttribute('NotBefore');
+    const notOnOrAfter = conditions.getAttribute('NotOnOrAfter');
+    const now = new Date();
+    
+    if (notBefore && new Date(notBefore) > now) {
+      return res.status(401).send('SAML assertion not yet valid');
+    }
+    if (notOnOrAfter && new Date(notOnOrAfter) <= now) {
+      return res.status(401).send('SAML assertion expired');
+    }
+    
+    // Check audience restriction
+    const audience = select('//saml:AudienceRestriction/saml:Audience/text()', doc)[0];
+    if (audience && audience.nodeValue !== config.issuer) {
+      return res.status(401).send('SAML assertion not intended for this application');
+    }
+  }
+  
+  console.log('✓ Conditions validated\n');
+  
+  // ---------------------------------------------
+  // STEP 4f: Extract the user identity (NameID)
+  // This is the "who you are" that replaces username/password
+  // ---------------------------------------------
+  const nameIdNode = select('//saml:NameID/text()', doc)[0];
+  const nameID = nameIdNode ? nameIdNode.nodeValue : null;
+  
+  if (!nameID) {
+    return res.status(401).send('No NameID found in SAML assertion');
+  }
+  
+  console.log('✓ User authenticated:', nameID, '\n');
+  
+  // ---------------------------------------------
+  // STEP 4g: Extract any additional attributes
+  // ---------------------------------------------
+  const attributes = {};
+  const attrNodes = select('//saml:Attribute', doc);
+  
+  attrNodes.forEach(attr => {
+    const name = attr.getAttribute('Name');
+    const valueNode = select('saml:AttributeValue/text()', attr)[0];
+    if (name && valueNode) {
+      attributes[name] = valueNode.nodeValue;
+    }
+  });
+  
+  console.log('Attributes:', attributes);
+  
+  // ---------------------------------------------
+  // STEP 5: Create your app's session
+  // From here on, YOUR app's authorization takes over
+  // ---------------------------------------------
+  
+  // In production, set a real session cookie here
+  // For demo, just show success
+  res.send(`
+    <h1>SAML Authentication Successful</h1>
+    <button onclick="alert('Hello World')">Hello World</button>
+    <h2>Identity from IdP:</h2>
+    <p><strong>NameID:</strong> ${nameID}</p>
+    <h3>Attributes:</h3>
+    <pre>${JSON.stringify(attributes, null, 2)}</pre>
+    <hr>
+    <p>From here, you'd map this identity to a local user and create a session.</p>
+  `);
+});
+
+// =============================================================================
+// METADATA ENDPOINT - IdPs need this to configure trust
+// =============================================================================
+app.get('/saml/metadata', (req, res) => {
+  const metadata = `<?xml version="1.0" encoding="UTF-8"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
+    entityID="${config.issuer}">
+    <md:SPSSODescriptor
+        AuthnRequestsSigned="false"
+        WantAssertionsSigned="true"
+        protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+        <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+        <md:AssertionConsumerService
+            Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+            Location="${config.acsUrl}"
+            index="1"/>
+    </md:SPSSODescriptor>
+</md:EntityDescriptor>`;
+  
+  res.type('application/xml');
+  res.send(metadata);
+});
+
+// Home page
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>Raw SAML Service Provider</h1>
+    <p><a href="/login">Login via SAML</a></p>
+    <p><a href="/saml/metadata">View SP Metadata</a></p>
+    <p><a href="/config.html">SAML configuration</a></p>
+  `);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Raw SAML SP running on http://localhost:${PORT}`);
+  console.log(`Metadata available at http://localhost:${PORT}/saml/metadata`);
+});
