@@ -1,0 +1,17 @@
+{
+  "name": "homegrown-saml-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "express": "^4.21.0",
+    "xml-crypto": "^3.2.0",
+    "xpath": "^0.0.32"
+  }
+}

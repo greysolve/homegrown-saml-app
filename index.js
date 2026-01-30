@@ -26,7 +26,7 @@ const SAML_CONFIG_API_BASE = process.env.SAML_CONFIG_API_BASE || 'https://app.gr
 // Fetch SAML config from API by DEFAULT_IDP_ISSUER (used for SSO)
 async function getSamlConfig() {
   const issuer = process.env.DEFAULT_IDP_ISSUER;
-  if (!issuer) throw new Error('DEFAULT_IDP_ISSUER is required (set in .env)');
+  if (!issuer) throw new Error('DEFAULT_IDP_ISSUER is required (set in .env or Vercel environment)');
   const url = `${SAML_CONFIG_API_BASE}/saml-config?issuer=${encodeURIComponent(issuer)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch SAML config: ${res.status}`);
@@ -265,8 +265,12 @@ app.get('/', (req, res) => {
   `);
 });
 
+module.exports = app;
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Raw SAML SP running on http://localhost:${PORT}`);
-  console.log(`Metadata available at http://localhost:${PORT}/saml/metadata`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Raw SAML SP running on http://localhost:${PORT}`);
+    console.log(`Metadata available at http://localhost:${PORT}/saml/metadata`);
+  });
+}
